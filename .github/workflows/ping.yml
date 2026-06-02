@@ -2,7 +2,10 @@ name: SEO Ping & Page Visitor
 
 on:
   schedule:
+    # Daily run
     - cron: "23 7 * * *"
+    # Full re-submit every Sunday to keep all pages fresh in indexes
+    - cron: "11 5 * * 0"
   push:
     branches: [main]
   workflow_dispatch:
@@ -32,6 +35,7 @@ jobs:
       || github.event_name == 'push'
       || github.event_name == 'workflow_dispatch' && (inputs.task == 'both' || inputs.task == 'notify')
     runs-on: ubuntu-latest
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
 
@@ -43,7 +47,8 @@ jobs:
 
       - name: Notify search engines
         run: |
-          if [ "${{ inputs.force }}" = "true" ]; then
+          # Force re-submit all URLs every Sunday
+          if [ "${{ inputs.force }}" = "true" ] || [ "${{ github.event.schedule }}" = "11 5 * * 0" ]; then
             python notify.py --force
           else
             python notify.py
@@ -63,6 +68,7 @@ jobs:
       || github.event_name == 'push'
       || github.event_name == 'workflow_dispatch' && (inputs.task == 'both' || inputs.task == 'visit')
     runs-on: ubuntu-latest
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
 
@@ -74,5 +80,3 @@ jobs:
 
       - name: Visit all pages
         run: python visit.py
-
-

@@ -1,9 +1,23 @@
 #!/usr/bin/env python3
 """
-Search Engine Notifier
+Search Engine & AI Crawler Notifier
 
 Reads sites from sites.json, fetches sitemaps, finds NEW URLs,
-and pings Google/Bing/IndexNow.
+and submits to all available search engines and AI crawlers.
+
+Targets:
+  - IndexNow (Bing, Yandex, Naver, Seznam, Yep) — direct submission
+  - Google sitemap ping (legacy, best effort)
+  - Bing sitemap ping (legacy, best effort)
+
+AI crawlers that benefit (they use Bing/Yandex index or crawl sitemaps):
+  - Microsoft Copilot (uses Bing index — IndexNow directly helps)
+  - ChatGPT/OpenAI GPTBot (crawls sitemap.xml)
+  - Perplexity PerplexityBot (crawls sitemap.xml)
+  - You.com YouBot (crawls sitemap.xml)
+  - Claude/Anthropic ClaudeBot (crawls sitemap.xml)
+  - Phind (crawls sitemap.xml)
+  - Google Gemini (uses Google index)
 
 Usage:
     python notify.py              # Normal (new URLs only)
@@ -29,7 +43,19 @@ BASE_DIR = Path(__file__).parent
 SITES_FILE = BASE_DIR / "sites.json"
 STATE_FILE = BASE_DIR / "state.json"
 INDEXNOW_KEY = os.environ.get("INDEXNOW_KEY", "40ec972f18a54a3aa2bcc40b7b46a64c")
-INDEXNOW_ENDPOINT = "https://api.indexnow.org/IndexNow"
+
+# All IndexNow endpoints — submit to each directly for maximum coverage
+# api.indexnow.org distributes, but direct submission is more reliable
+INDEXNOW_ENDPOINTS = [
+    ("Bing", "https://www.bing.com/indexnow"),
+    ("Yandex", "https://yandex.com/indexnow"),
+    ("Naver", "https://searchadvisor.naver.com/indexnow"),
+    ("Seznam", "https://search.seznam.cz/indexnow"),
+    ("Yep", "https://indexnow.yep.com/indexnow"),
+]
+
+# URLs matching these patterns are skipped (not real content pages)
+EXCLUDE_PATTERNS = ["/tags/", "/categories/", "/page/"]
 
 
 def load_sites():
@@ -56,6 +82,14 @@ def save_state(state):
         json.dump(state, f, indent=2)
 
 
+def is_content_url(url):
+    """Filter out tag/category/pagination URLs — only keep real content."""
+    for pattern in EXCLUDE_PATTERNS:
+        if pattern in url:
+            return False
+    return True
+
+
 def fetch_sitemap_urls(sitemap_url):
     urls = []
     try:
@@ -75,47 +109,58 @@ def fetch_sitemap_urls(sitemap_url):
 
 
 def ping_google(sitemap_url, dry_run=False):
+    """Ping Google to re-crawl sitemap (legacy, best effort)."""
     url = f"https://www.google.com/ping?sitemap={quote(sitemap_url, safe='')}"
     if dry_run:
-        print(f"  [DRY] Google: {url}")
+        print(f"  [DRY] Google sitemap ping")
         return
     try:
         r = requests.get(url, timeout=15)
-        print(f"  Google ping: {'OK' if r.status_code == 200 else r.status_code}")
-    except Exception as e:
-        print(f"  Google ping failed: {e}")
+        if r.status_code == 200:
+            print(f"  Google: OK")
+    except:
+        pass
 
 
 def ping_bing(sitemap_url, dry_run=False):
+    """Ping Bing sitemap endpoint (legacy, best effort)."""
     url = f"https://www.bing.com/ping?sitemap={quote(sitemap_url, safe='')}"
     if dry_run:
-        print(f"  [DRY] Bing: {url}")
+        print(f"  [DRY] Bing sitemap ping")
         return
     try:
         r = requests.get(url, timeout=15)
-        print(f"  Bing ping: {'OK' if r.status_code == 200 else r.status_code}")
-    except Exception as e:
-        print(f"  Bing ping failed: {e}")
+        if r.status_code == 200:
+            print(f"  Bing sitemap: OK")
+    except:
+        pass
 
 
-def submit_indexnow(host, urls, dry_run=False):
+def submit_indexnow_all(host, urls, dry_run=False):
+    """Submit URLs to ALL IndexNow endpoints (Bing, Yandex, Naver, Seznam, Yep)."""
     if not INDEXNOW_KEY or not urls:
         return
+
     payload = {
         "host": host,
         "key": INDEXNOW_KEY,
         "keyLocation": f"https://{host}/{INDEXNOW_KEY}.txt",
         "urlList": urls[:10000],
     }
+
     if dry_run:
-        print(f"  [DRY] IndexNow: {len(urls)} URLs")
+        print(f"  [DRY] IndexNow → {len(urls)} URLs to {len(INDEXNOW_ENDPOINTS)} engines")
         return
-    try:
-        r = requests.post(INDEXNOW_ENDPOINT, json=payload,
-                         headers={"Content-Type": "application/json; charset=utf-8"}, timeout=30)
-        print(f"  IndexNow ({len(urls)} URLs): {'OK' if r.status_code in (200, 202) else r.status_code}")
-    except Exception as e:
-        print(f"  IndexNow failed: {e}")
+
+    for name, endpoint in INDEXNOW_ENDPOINTS:
+        try:
+            r = requests.post(endpoint, json=payload,
+                             headers={"Content-Type": "application/json; charset=utf-8"}, timeout=30)
+            status = "OK" if r.status_code in (200, 202) else f"{r.status_code}"
+            print(f"  IndexNow → {name}: {status}")
+        except Exception as e:
+            print(f"  IndexNow → {name}: FAILED ({e})")
+        time.sleep(1)  # Brief pause between endpoints
 
 
 def main():
@@ -130,12 +175,14 @@ def main():
     total_new = 0
 
     for site in sites:
-        print(f"\n--- {site['name']} ---")
+        print(f"\n{'='*50}")
+        print(f" {site['name']}")
+        print(f"{'='*50}")
         sitemap_url = site.get("sitemap") or site.get("rss")
         host = site["host"]
 
+        # Fetch all URLs from sitemap
         all_urls = fetch_sitemap_urls(sitemap_url)
-        print(f"  Sitemap: {len(all_urls)} URLs")
 
         # Also try RSS if provided
         rss_url = site.get("rss")
@@ -153,32 +200,41 @@ def main():
             except:
                 pass
 
-        print(f"  Total unique: {len(all_urls)}")
+        # Filter out non-content URLs (tags, categories, pagination)
+        content_urls = [u for u in all_urls if is_content_url(u)]
+        excluded = len(all_urls) - len(content_urls)
+        print(f"  Sitemap: {len(all_urls)} total, {len(content_urls)} content pages ({excluded} excluded)")
 
+        # Find new URLs
         prev = set(state["submitted_urls"].get(host, []))
-        new_urls = all_urls if force else [u for u in all_urls if u not in prev]
+        new_urls = content_urls if force else [u for u in content_urls if u not in prev]
 
         if new_urls:
             total_new += len(new_urls)
-            print(f"  New: {len(new_urls)}")
+            print(f"  New URLs: {len(new_urls)}")
             for u in new_urls[:5]:
                 print(f"    + {u}")
             if len(new_urls) > 5:
                 print(f"    ... +{len(new_urls)-5} more")
 
+            print(f"\n  Pinging search engines...")
             ping_google(sitemap_url, dry_run)
             ping_bing(sitemap_url, dry_run)
-            submit_indexnow(host, new_urls, dry_run)
+
+            print(f"  Submitting to IndexNow (Bing, Yandex, Naver, Seznam, Yep)...")
+            submit_indexnow_all(host, new_urls, dry_run)
 
             if not dry_run:
-                state["submitted_urls"][host] = list(prev | set(all_urls))
+                state["submitted_urls"][host] = list(prev | set(content_urls))
         else:
-            print(f"  No new content")
+            print(f"  No new content — all URLs already submitted")
 
     if not dry_run:
         save_state(state)
 
-    print(f"\nDone: {total_new} new URLs notified")
+    print(f"\n{'='*50}")
+    print(f" DONE: {total_new} new URLs → Bing, Yandex, Naver, Seznam, Yep")
+    print(f"{'='*50}")
 
 
 if __name__ == "__main__":

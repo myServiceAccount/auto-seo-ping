@@ -55,6 +55,17 @@ def load_sites():
         return json.load(f)
 
 
+# URLs matching these patterns are not content pages — skip them
+EXCLUDE_PATTERNS = ["/tags/", "/categories/", "/page/"]
+
+
+def is_content_url(url):
+    for pattern in EXCLUDE_PATTERNS:
+        if pattern in url:
+            return False
+    return True
+
+
 def fetch_sitemap_urls(sitemap_url):
     urls = []
     try:
@@ -111,7 +122,6 @@ def visit_page(url):
 
         # Clear all cookies and cached data before next page
         session.cookies.clear()
-        session.cache = {}
         session.close()
         del session
         return True
@@ -154,11 +164,14 @@ def main():
             except:
                 pass
 
-        print(f"  URLs: {len(urls)}")
-        all_urls.extend(urls)
+        # Filter: only content pages, skip tags/categories/pagination
+        content_urls = [u for u in urls if is_content_url(u)]
+        excluded = len(urls) - len(content_urls)
+        print(f"  Found: {len(urls)} total, {len(content_urls)} content pages ({excluded} skipped)")
+        all_urls.extend(content_urls)
 
     all_urls = list(dict.fromkeys(all_urls))
-    print(f"\nTotal pages: {len(all_urls)}")
+    print(f"\nContent pages to visit: {len(all_urls)}")
 
     if dry_run:
         for u in all_urls[:10]:
@@ -176,12 +189,15 @@ def main():
     for i, url in enumerate(all_urls):
         if visit_page(url):
             success += 1
+            # Short slug from URL for readable log
+            slug = url.rstrip("/").split("/")[-1] or url
+            print(f"  ✓ {slug}")
         else:
             failed += 1
-            print(f"  FAIL: {url}")
+            print(f"  ✗ FAIL: {url}")
 
-        if (i + 1) % 10 == 0:
-            print(f"  [{i+1}/{len(all_urls)}] ok={success} fail={failed}")
+        if (i + 1) % 20 == 0:
+            print(f"  --- [{i+1}/{len(all_urls)}] ok={success} fail={failed} ---")
 
         time.sleep(random.uniform(1.5, 4.0))
 
