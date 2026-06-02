@@ -1,0 +1,12 @@
+[
+  {
+    "name": "SamirPaul Blog (GitHub Pages)",
+    "sitemap": "https://samirpaulb.github.io/sitemap.xml",
+    "host": "samirpaulb.github.io"
+  },
+  {
+    "name": "SamirPaul Blog (Cloudflare Pages)",
+    "sitemap": "https://samir.pages.dev/sitemap.xml",
+    "host": "samir.pages.dev"
+  }
+]
