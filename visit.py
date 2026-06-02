@@ -199,7 +199,9 @@ def main():
         if (i + 1) % 20 == 0:
             print(f"  --- [{i+1}/{len(all_urls)}] ok={success} fail={failed} ---")
 
-        time.sleep(random.uniform(1.5, 4.0))
+        # 30 req/60s rate limit → max 1 every 2s
+        # Using 2.5-4s to stay safe and scale to 3000+ pages within 6hr timeout
+        time.sleep(random.uniform(2.5, 4.0))
 
     print(f"\nDone: {success} visited, {failed} failed, {len(all_urls)} total")
 
