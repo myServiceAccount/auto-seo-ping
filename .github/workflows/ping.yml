@@ -1,4 +1,4 @@
-name: SEO Ping & Page Visitor
+name: SEO Ping
 
 on:
   schedule:
@@ -10,15 +10,6 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
-      task:
-        description: "What to run"
-        required: true
-        default: "both"
-        type: choice
-        options:
-          - both
-          - notify
-          - visit
       force:
         description: "Force submit all URLs to IndexNow"
         required: false
@@ -30,10 +21,6 @@ permissions:
 
 jobs:
   notify:
-    if: >-
-      github.event_name == 'schedule'
-      || github.event_name == 'push'
-      || github.event_name == 'workflow_dispatch' && (inputs.task == 'both' || inputs.task == 'notify')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -61,27 +48,3 @@ jobs:
           git add state.json
           git diff --cached --quiet || git commit -m "chore: update state"
           git push || true
-
-  visit:
-    if: >-
-      github.event_name == 'schedule'
-      || github.event_name == 'push'
-      || github.event_name == 'workflow_dispatch' && (inputs.task == 'both' || inputs.task == 'visit')
-    runs-on: ubuntu-latest
-    timeout-minutes: 330
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install dependencies
-        run: pip install requests playwright
-
-      - name: Install Playwright browsers
-        continue-on-error: true
-        run: playwright install chromium --with-deps
-
-      - name: Visit all pages
-        run: python visit.py --timeout 300
